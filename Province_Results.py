@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from streamlit_gsheets import GSheetsConnection
+
 
 st.set_page_config(page_title="Thailand Election 2026 Dashboard", layout="wide")
 
@@ -39,9 +41,16 @@ seat_counts.columns = ['Party', 'Seats']
 # Define Party Colors
 color_map = {
     "People's Party": "#FF6600", "Pheu Thai": "#DF0000", 
-    "Bhumjaithai": "#00008B", "Democrat": "#00BFFF", "Other": "#808080"
+    "Bhumjaithai": "#00008B", "Democrat": "#00BFFF", 
+    "Economic Party": "#DAF759", "Klatam": "#065A1F",
+    "Others": "#808080"
 }
-
+color_map = {
+    "ประชาชน": "#FF6600", "เพื่อไทย": "#DF0000", 
+    "ภูมิใจไทย": "#00008B", "ประชาธิปัตย์": "#00BFFF",
+    "พรรคเศรษฐกิจ": "#DAF759", "พรรคกล้าธรรม": "#065A1F",
+    "Others": "#808080"
+    }
 # Display Metrics
 cols = st.columns(len(seat_counts))
 for i, row in seat_counts.iterrows():
