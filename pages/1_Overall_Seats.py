@@ -3,109 +3,134 @@ import pandas as pd
 import math
 import plotly.express as px
 
-st.set_page_config(page_title="Total 500 Seats", layout="wide")
+st.set_page_config(page_title="Thailand Election", layout="wide")
 
 # 1. Load Data
 @st.cache_data
-def load_overall_data():
-    df = pd.read_excel("Th election Province list.xlsx", skiprows=2)
-    non_party_cols = ['Province', 'Region','Constituency_ID','District (English)','District']
-    party_cols = [c for c in df.columns if c not in non_party_cols]
-    for col in party_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-    return df, party_cols
+def load_election_data():
+    sheet_id = "1fm_6pbiXU6jBwHtu13Yuqh_XgQY-AW03"
+    province_gid = "858321697"
+    partylist_gid = "374730466"
 
-df, party_cols = load_overall_data()
+    def process_sheet(gid):
+        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+        df = pd.read_csv(url, header=1)
+        non_party_cols = ['Province', 'Region', 'Constituency_ID', 'Province (English)', 'District']
+        party_cols = [c for c in df.columns if c not in non_party_cols and "Unnamed" not in c]
+        for col in party_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        df['District_Winner'] = df[party_cols].idxmax(axis=1)
+        df['Winning_Votes'] = df[party_cols].max(axis=1)
+        return df, party_cols
 
-# 2. Calculations
-constituency_winners = df[party_cols].idxmax(axis=1).value_counts()
-total_party_votes = df[party_cols].sum()
-quota = total_party_votes.sum() / 100
+    province_df, _ = process_sheet(province_gid)
+    partylist_df, party_cols = process_sheet(partylist_gid)
+    return province_df, partylist_df, party_cols
 
-pl_seats = (total_party_votes / quota).apply(lambda x: int(x))
-remainders = (total_party_votes / quota) % 1
-extra_seats = 100 - pl_seats.sum()
-top_remainders = remainders.nlargest(int(extra_seats)).index
-for party in top_remainders:
-    pl_seats[party] += 1
+province_df, partylist_df, party_cols = load_election_data()
 
-summary = pd.DataFrame({
-    "Constituency": constituency_winners,
-    "Party-List": pl_seats
-}).fillna(0).astype(int)
-summary["Total Seats"] = summary["Constituency"] + summary["Party-List"]
-summary = summary.sort_values("Total Seats", ascending=False)
+# 2. Seat Calculations
+constituency_winners = province_df['District_Winner'].value_counts()
+total_party_votes = partylist_df[party_cols].sum()
+total_votes_sum = total_party_votes.sum()
 
-# 3. UI Layout
-st.title("🏛️ Total Parliament (500 Seats)")
+# Initialize calculation dataframe for the Party List breakdown
+pl_calc = pd.DataFrame({
+    "Total Votes": total_party_votes,
+})
 
-# --- NEW: COALITION BUILDER ---
-st.sidebar.header("🤝 Coalition Builder")
-st.sidebar.write("Select parties to form a government:")
-# Create checkboxes for each party
-selected_parties = []
-for party in summary.index:
-    if st.sidebar.checkbox(party, key=f"coal_{party}"):
-        selected_parties.append(party)
-
-coalition_total = summary.loc[selected_parties, "Total Seats"].sum()
-
-# Display Coalition Status
-st.sidebar.divider()
-st.sidebar.subheader(f"Coalition Strength: {coalition_total}")
-if coalition_total >= 376:
-    st.sidebar.success("✅ Majority Reached (Prime Minister Secured)")
-elif coalition_total >= 251:
-    st.sidebar.warning("⚠️ House Majority (But needs Senate/Extra for PM)")
-else:
-    st.sidebar.info("❌ Minority (Need more partners)")
-
-# 4. Bubble Chart logic
-def get_parliament_coords(seat_counts, rows=10, radius=6):
-    data = []
-    total_seats = sum(seat_counts.values())
-    sorted_parties = sorted(seat_counts.items(), key=lambda x: x[1], reverse=True)
+if total_votes_sum > 0:
+    quota = total_votes_sum / 100
+    pl_calc["Quotient"] = pl_calc["Total Votes"] / quota
+    pl_calc["Base Seats"] = pl_calc["Quotient"].apply(lambda x: int(x))
+    pl_calc["Remainder"] = pl_calc["Quotient"] % 1
     
+    # Identify which parties get the extra seats
+    extra_seats_needed = 100 - pl_calc["Base Seats"].sum()
+    top_remainder_indices = pl_calc["Remainder"].nlargest(int(extra_seats_needed)).index
+    
+    pl_calc["Extra Seat"] = 0
+    pl_calc.loc[top_remainder_indices, "Extra Seat"] = 1
+    pl_calc["Final PL Seats"] = pl_calc["Base Seats"] + pl_calc["Extra Seat"]
+else:
+    pl_calc["Final PL Seats"] = 0
+
+# Final summary for the Arc Chart
+summary = pd.DataFrame({
+    "Constituency": constituency_winners, 
+    "Party List": pl_calc["Final PL Seats"]
+}).fillna(0).astype(int)
+summary["Total"] = summary["Constituency"] + summary["Party List"]
+summary = summary[summary["Total"] > 0].sort_values("Total", ascending=False)
+
+# 3. Visualization Logic (The Arc)
+def create_parliament_data(summary_df, province_df, rows=10, radius=10):
     all_seats = []
-    for party, count in sorted_parties:
-        all_seats.extend([party] * count)
-        
-    for i in range(len(all_seats)):
+    for party in summary_df.index:
+        party_districts = province_df[province_df['District_Winner'] == party]
+        for _, row in party_districts.iterrows():
+            all_seats.append({"Party": party, "Info": f"{row['Province (English)']}, {row['District']}"})
+        pl_count = summary_df.loc[party, "Party List"]
+        for _ in range(pl_count):
+            all_seats.append({"Party": party, "Info": "Party List"})
+    
+    points = []
+    for i, seat in enumerate(all_seats):
         row = i % rows
-        angle = math.pi * (i / 500) 
-        r = radius + (row * 0.5)
-        x = r * math.cos(math.pi - angle)
-        y = r * math.sin(math.pi - angle)
-        # Check if seat is in the selected coalition for highlighting
-        is_coalition = "In Coalition" if all_seats[i] in selected_parties else "Opposition"
-        data.append({"x": x, "y": y, "Party": all_seats[i], "Status": is_coalition})
-    return pd.DataFrame(data)
+        angle = math.pi * (i / 500)
+        r = radius + (row * 0.7)
+        points.append({
+            "x": r * math.cos(math.pi - angle),
+            "y": r * math.sin(math.pi - angle),
+            "Party": seat["Party"],
+            "Location": seat["Info"]
+        })
+    return pd.DataFrame(points)
 
-coords_df = get_parliament_coords(summary["Total Seats"].to_dict())
+# 4. Display
+st.title("🏛️ Thailand Parliament (500 Seats)")
 
-# Use the Thai color map you provided
 thai_colors = {
-    "ประชาชน": "#FF6600", "เพื่อไทย": "#DF0000", 
+    "เพื่อไทย": "#DF0000", "ประชาชน": "#FF6600",
     "ภูมิใจไทย": "#00008B", "ประชาธิปัตย์": "#00BFFF",
-    "พรรคเศรษฐกิจ": "#DAF759", "พรรคกล้าธรรม": "#065A1F",
-    "Others": "#808080"
+    "รวมไทยสร้างชาติ": "#000073", "พลังประชารัฐ": "#0000FF",
+    "ชาติไทยพัฒนา": "#FF69B4", "ประชาชาติ": "#8B4513"
 }
 
-fig_parliament = px.scatter(
-    coords_df, x="x", y="y", color="Party",
+coords = create_parliament_data(summary, province_df)
+fig = px.scatter(
+    coords, x="x", y="y", color="Party", 
     color_discrete_map=thai_colors,
-    hover_data=["Status"]
+    custom_data=["Party", "Location"],
+    category_orders={"Party": summary.index.tolist()} 
+)
+fig.update_traces(
+    hovertemplate="<b>%{customdata[0]}</b><br>%{customdata[1]}<extra></extra>",
+    marker=dict(size=14, line=dict(width=1, color='white'))
+)
+fig.update_layout(
+    xaxis=dict(visible=False), yaxis=dict(visible=False),
+    plot_bgcolor="rgba(0,0,0,0)", height=600,
+    legend=dict(orientation="h", y=-0.1, x=0.5, xanchor="center")
 )
 
-fig_parliament.update_traces(marker=dict(size=10, line=dict(width=1, color='white')))
-fig_parliament.update_layout(
-    showlegend=True,
-    xaxis=dict(visible=False),
-    yaxis=dict(visible=False),
-    plot_bgcolor="rgba(0,0,0,0)",
-    height=600
-)
+st.plotly_chart(fig, use_container_width=True)
 
-st.plotly_chart(fig_parliament, width="stretch") # Updated to your 'stretch' syntax!
-
+st.subheader("📊 Seat Distribution Summary")
 st.table(summary)
+
+# --- NEW SECTION: PARTY LIST CALCULATION TABLE ---
+st.divider()
+st.subheader("📝 Party List Calculation (100 Seats)")
+st.write(f"**National Quota:** {total_votes_sum:,} total votes / 100 seats = **{quota:,.2f} votes per seat**")
+
+# Format the calculation table for better readability
+formatted_pl = pl_calc.sort_values("Total Votes", ascending=False).copy()
+st.dataframe(
+    formatted_pl.style.format({
+        "Total Votes": "{:,.0f}",
+        "Quotient": "{:.4f}",
+        "Remainder": "{:.4f}"
+    }).highlight_max(subset=["Remainder"], color="#e6f4ea"), 
+    use_container_width=True
+)
