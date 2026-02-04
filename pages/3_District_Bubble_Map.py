@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import numpy as np # For generating district positions
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="400 Constituency Seats Map", layout="wide")
 
@@ -9,7 +10,6 @@ st.title("🇹🇭 400 Constituency Seat Winners")
 st.subheader("Each bubble represents one district, colored by winning party.")
 
 # 1. Load Data
-@st.cache_data
 def load_election_data():
     sheet_id = "1fm_6pbiXU6jBwHtu13Yuqh_XgQY-AW03"
     province_gid = "858321697"
@@ -23,8 +23,12 @@ def load_election_data():
         party_cols = [c for c in df.columns if c not in non_party_cols and "Unnamed" not in c]
         for col in party_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        df['District_Winner'] = df[party_cols].idxmax(axis=1)
-        df['Winning_Votes'] = df[party_cols].max(axis=1)
+        row_max = df[party_cols].max(axis=1)
+        row_idxmax = df[party_cols].idxmax(axis=1)
+
+        # Only assign a winner if the max vote is > 0; otherwise, leave blank
+        df['District_Winner'] = row_idxmax.where(row_max > 0, "NO INFORMATION YET")
+        df['Winning_Votes'] = row_max
         return df, party_cols
 
     province_df, _ = process_sheet(province_gid)
@@ -41,48 +45,109 @@ plot_df = province_df.merge(
     how='left'
 )
 
-# Jittering to separate districts in the same province
-np.random.seed(42)
-jitter_scale = 0.12
-plot_df['Lat_Jitter'] = plot_df['Latitude'] + np.random.uniform(-jitter_scale, jitter_scale, size=len(plot_df))
-plot_df['Lon_Jitter'] = plot_df['Longitude'] + np.random.uniform(-jitter_scale, jitter_scale, size=len(plot_df))
+# Organised layout: arrange districts in a small grid around the province centroid
+# This creates deterministic, non-overlapping clusters per province instead of random jitter.
+spacing = 0.2 # degrees between points in the province grid
+marker_size = 25
+# Prepare offset dataframe
+offsets = pd.DataFrame(0.0, index=plot_df.index, columns=['dx', 'dy'])
+
+for province, group in plot_df.groupby('Province (English)'):
+    n = len(group)
+    if n == 1:
+        # single district: keep at centroid
+        continue
+    grid_size = int(np.ceil(np.sqrt(n)))
+
+    # Scale longitude offsets by 1/cos(lat) to approximate equal physical spacing
+    centroid_lat = group['Latitude'].mean()
+    lat_rad = np.deg2rad(centroid_lat)
+    lon_scale = 1.0 / max(np.cos(lat_rad), 0.2)
+
+    # Create grid coordinates: left-to-right, top-to-bottom
+    coords_list = []
+    for row in reversed(range(grid_size)):
+        y = (row - (grid_size - 1) / 2.0) * spacing
+        for col in range(grid_size):
+            x = (col - (grid_size - 1) / 2.0) * spacing * lon_scale
+            coords_list.append([x, y])
+    coords = np.array(coords_list)[:n]
+
+    # # Deterministic ordering: use Constituency_ID if present, otherwise sort by District name
+    # if 'Constituency_ID' in group.columns:
+    #     order_idx = np.argsort(group['Constituency_ID'].astype(str).values)
+    # else:
+    order_idx = np.argsort(group['District'].astype(int).values)
+
+    ordered_indices = group.index.to_numpy()[order_idx]
+    # Assign coordinates in left-to-right, top-to-bottom order to the sorted districts
+    offsets.loc[ordered_indices, 'dx'] = coords[:, 0]
+    offsets.loc[ordered_indices, 'dy'] = coords[:, 1]
+
+# Apply offsets: dx -> longitude, dy -> latitude
+plot_df['Lat_Jitter'] = plot_df['Latitude'] + offsets['dy']
+plot_df['Lon_Jitter'] = plot_df['Longitude'] + offsets['dx']
 
 # 3. Define Party Colors
 thai_colors = {
     "ประชาชน": "#FF6600", "เพื่อไทย": "#DF0000", 
     "ภูมิใจไทย": "#00008B", "ประชาธิปัตย์": "#00BFFF",
     "พรรคเศรษฐกิจ": "#DAF759", "พรรคกล้าธรรม": "#065A1F",
-    "Others": "#808080"
+    "Others": "#808080", "NO INFORMATION YET": "#808080"
 }
+
+# 4. Sidebar: Zoom Control
+zoom_level = 6.2
+
+# Adaptive marker and text size based on zoom
+marker_size = 15 + (zoom_level - 3) * 2.5  # ranges from 15 to 32.5
+text_size = 7 + (zoom_level - 3) * 1  # ranges from 7 to 14
 
 # 4. Layout: Two Columns
 col_map, col_info = st.columns([2, 1])
-
+plot_df['District'] =plot_df['District'].astype(str)
 with col_map:
+    
     fig_map = px.scatter_mapbox(
         plot_df,
         lat="Lat_Jitter",
         lon="Lon_Jitter",
+        text="District",
         color="District_Winner",
         color_discrete_map=thai_colors,
-        hover_name="District",
+        hover_name="Constituency_ID",
         hover_data={
-            "Province (English)": True,
+            # "Province (English)": True,
+            "District": False,
             "District_Winner": True,
+            "Winning_Votes": True,
             "Lat_Jitter": False,
             "Lon_Jitter": False
         },
-        zoom=5,
+        zoom=zoom_level,
         center={"lat": 13.7367, "lon": 100.5231},
         mapbox_style="carto-positron",
-        height=700
-    )
-    fig_map.update_traces(marker=dict(size=12, opacity=0.8))
-    fig_map.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+        height=1000
+        )
+    fig_map.update_traces(marker=dict(size=marker_size, opacity=0.8), textfont=dict(size=text_size, color='white'), hoverinfo=None)
+
+    # Add a separate text-only trace so labels are displayed centered without altering markers
+    # fig_map.add_trace(
+    #     go.Scattermapbox(
+    #         lat=plot_df['Lat_Jitter'],
+    #         lon=plot_df['Lon_Jitter'],
+    #         mode='text',
+    #         text=plot_df['District'].astype(str),
+    #         textposition='middle center',
+    #         textfont=dict(size=text_size, color='white'),
+    #         hoverinfo='none',
+    #         showlegend=False
+    #     )
+    # )
 
     # ENABLE INTERACTION
     # Selection mode 'points' allows us to capture which bubble is clicked
-    selected_data = st.plotly_chart(fig_map, on_select="rerun", selection_mode="points", use_container_width=True)
+    selected_data = st.plotly_chart(fig_map, on_select="rerun", selection_mode="points", use_container_width=True, config={"displayModeBar": False})
 
 with col_info:
     # 5. Logic to show District Details
@@ -97,10 +162,10 @@ with col_info:
         st.subheader(f"Results: {district_name}")
         
         # Filter data for selected district
-        district_row = province_df[province_df['District'] == district_name].iloc[0]
+        district_row = province_df[province_df['Constituency_ID'] == str(district_name)].iloc[0]
         
         # Get Top 3 Parties
-        votes = district_row[party_cols].sort_values(ascending=False).head(3)
+        votes = district_row[party_cols].sort_values(ascending=False).head(5)
         votes_df = pd.DataFrame({'Party': votes.index, 'Votes': votes.values})
         
         # Bar Chart
@@ -114,7 +179,7 @@ with col_info:
             text_auto=',.0f'
         )
         fig_bar.update_layout(showlegend=False, xaxis_title="Total Votes", yaxis_title="")
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, use_container_width=True,)
         
         # Show breakdown table
         st.dataframe(votes_df, hide_index=True, use_container_width=True)
