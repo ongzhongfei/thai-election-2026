@@ -99,7 +99,8 @@ thai_colors = {
     "ภูมิใจไทย": "#00008B", "ประชาธิปัตย์": "#00BFFF",
     "รวมไทยสร้างชาติ": "#000073", "พลังประชารัฐ": "#0000FF",
     "ชาติไทยพัฒนา": "#FF69B4", "ประชาชาติ": "#8B4513",
-    "No information Yet": "#D3D3D3",
+    "NO INFORMATION YET": "#D3D3D3",
+    "พรรคเศรษฐกิจ":"#FFD700","พรรคกล้าธรรม":"#00A651"
 }
 
 coords = create_parliament_data(summary, province_df)
