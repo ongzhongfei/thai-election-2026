@@ -3,7 +3,7 @@ import pandas as pd
 import math
 import plotly.express as px
 
-st.set_page_config(page_title="Thailand Election", layout="wide")
+st.set_page_config(page_title="Thailand Election 2026", layout="wide")
 
 # 1. Load Data
 @st.cache_data
@@ -23,9 +23,7 @@ def load_election_data():
         row_idxmax = df[party_cols].idxmax(axis=1)
 
         # Only assign a winner if the max vote is > 0; otherwise, leave blank
-        df['District_Winner'] = row_idxmax.where(row_max > 0, "No Information Yet")
-        #### change blank to no information yet
-        # df["District_Winner"] = df["District_Winner"].replace("", "No Information Yet")
+        df['District_Winner'] = row_idxmax.where(row_max > 0, "NO INFORMATION YET")
         df['Winning_Votes'] = row_max
         return df, party_cols
 
@@ -125,9 +123,19 @@ st.plotly_chart(fig, width="stretch")
 
 st.divider()
 st.subheader("📊 Seat Distribution Summary")
+# Create a copy to add percentage columns without affecting the original summary used for the Arc
+summary_display = summary.copy()
 
-# Determine how many columns to use based on the number of parties
-# (Limited to 5 per row for better visibility)
+# Calculate percentages based on the fixed total house sizes
+summary_display["Constituency %"] = (summary_display["Constituency Seats"] / 400 * 100).map("{:.1f}%".format)
+summary_display["Total %"] = (summary_display["Total"] / 500 * 100).map("{:.1f}%".format)
+
+# Reorder columns for better flow: Seats then their corresponding %
+summary_display = summary_display[[
+    "Constituency Seats", "Constituency %", 
+    "Party List", 
+    "Total", "Total %"
+]]
 parties = summary.index.tolist()
 cols_per_row = 5
 
@@ -137,33 +145,48 @@ for i in range(0, len(parties), cols_per_row):
     
     for party, col in zip(row_parties, row_cols):
         with col:
-            # Custom styling for each party card
             color = thai_colors.get(party, "#808080")
+            total_seats = summary.loc[party, 'Total']
+            # Calculate total percentage for the card
+            total_pct = (total_seats / 500) * 100
+            
             st.markdown(f"""
                 <div style="border-left: 5px solid {color}; padding: 10px; background-color: #f9f9f9; border-radius: 5px; margin-bottom: 10px;">
                     <h4 style="margin: 0; color: #333;">{party}</h4>
-                    <p style="margin: 5px 0 2px 0; font-size: 1.5em; color: #666;">Total: <b>{summary.loc[party, 'Total']}</b></p>
+                    <p style="margin: 5px 0 2px 0; font-size: 1.3em; color: #666;">
+                        Total: <b>{total_seats}</b> <span style="font-size: 0.7em;">({total_pct:.1f}%)</span>
+                    </p>
                     <hr style="margin: 5px 0;">
-                    <p style="margin: 2px 0; font-size: 1.0em;">🏛️ Constituency: {summary.loc[party, 'Constituency Seats']}</p>
-                    <p style="margin: 2px 0; font-size: 1.0em;">📝 List: {summary.loc[party, 'Party List']}</p>
+                    <p style="margin: 2px 0; font-size: 0.9em;">🏛️ Constituency: {summary.loc[party, 'Constituency Seats']}</p>
+                    <p style="margin: 2px 0; font-size: 0.9em;">📝 List: {summary.loc[party, 'Party List']}</p>
                 </div>
             """, unsafe_allow_html=True)
+st.subheader("Total Parliament Control Share (500 Seats)")
+# Using 'Seats' as the numeric value ensures proportional slices
+fig_pie = px.pie(summary, values="Total", names=summary.index.tolist(), 
+                    color=summary.index.tolist(), color_discrete_map=thai_colors, hole=0.2)
+st.plotly_chart(fig_pie, width='stretch')
+
 st.markdown("<br>", unsafe_allow_html=True) 
-# --- ADD TOTAL ROW ---
-# Calculate the totals for numeric columns
-totals = summary.sum(numeric_only=True)
-totals_df = pd.DataFrame(totals).T
+
+# 3. Add Total Row and Display Table
+# ---------------------------------------------------------
+# Calculate totals for the numeric columns only
+numeric_totals = summary.sum(numeric_only=True)
+totals_df = pd.DataFrame(numeric_totals).T
 totals_df.index = ["TOTAL"]
 
-# Combine the summary with the totals row
-summary_with_total = pd.concat([summary, totals_df])
+# Calculate percentages for the TOTAL row
+totals_df["Constituency %"] = (totals_df["Constituency Seats"] / 400 * 100).map("{:.1f}%".format)
+totals_df["Total %"] = (totals_df["Total"] / 500 * 100).map("{:.1f}%".format)
 
-# Display the table
-st.table(summary_with_total)           
+# Combine and display
+summary_final = pd.concat([summary_display, totals_df[summary_display.columns]])
+st.table(summary_final)         
 
 # --- NEW SECTION: Voting detail breakdown ---
 st.divider()
-st.subheader("🗳️ Voting Details")
+st.subheader("🗳️ Constituency Voting Details")
 with st.expander("See detailed vote counts and seat allocations for each party"):
     detailed_table = pl_calc.copy()
     detailed_table["Constituency Seats"] = detailed_table.index.map(constituency_winners).fillna(0).astype(int)
