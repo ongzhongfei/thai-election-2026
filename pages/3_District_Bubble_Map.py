@@ -124,7 +124,7 @@ with col_map:
             "Lat_Jitter": False,
             "Lon_Jitter": False
         },
-        zoom=zoom_level,
+        zoom=6.5,
         center={"lat": 13.7367, "lon": 100.5231},
         mapbox_style="carto-positron",
         height=1000
@@ -147,7 +147,13 @@ with col_map:
 
     # ENABLE INTERACTION
     # Selection mode 'points' allows us to capture which bubble is clicked
-    selected_data = st.plotly_chart(fig_map, on_select="rerun", selection_mode="points", use_container_width=True, config={"displayModeBar": False})
+    selected_data = st.plotly_chart(
+        fig_map,
+        on_select="rerun",
+        selection_mode="points",
+        use_container_width=True,
+        config={"displayModeBar": False, "scrollZoom": True}
+    )
 
 with col_info:
     # 5. Logic to show District Details
