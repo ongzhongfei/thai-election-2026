@@ -6,7 +6,7 @@ import plotly.express as px
 st.set_page_config(page_title="Thailand Election 2026", layout="wide")
 
 # 1. Load Data
-@st.cache_data
+# @st.cache_data
 def load_election_data():
     sheet_id = "1fm_6pbiXU6jBwHtu13Yuqh_XgQY-AW03"
     province_gid = "858321697"
