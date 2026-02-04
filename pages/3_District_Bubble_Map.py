@@ -44,11 +44,11 @@ plot_df = province_df.merge(
     on='Province (English)', 
     how='left'
 )
-
+zoom_level = 7
 # Organised layout: arrange districts in a small grid around the province centroid
 # This creates deterministic, non-overlapping clusters per province instead of random jitter.
-spacing = 0.2 # degrees between points in the province grid
-marker_size = 25
+spacing = 0.13 # degrees between points in the province grid
+marker_size = 18
 # Prepare offset dataframe
 offsets = pd.DataFrame(0.0, index=plot_df.index, columns=['dx', 'dy'])
 
@@ -97,7 +97,7 @@ thai_colors = {
 }
 
 # 4. Sidebar: Zoom Control
-zoom_level = 6.2
+
 
 # Adaptive marker and text size based on zoom
 marker_size = 15 + (zoom_level - 3) * 2.5  # ranges from 15 to 32.5
@@ -124,7 +124,7 @@ with col_map:
             "Lat_Jitter": False,
             "Lon_Jitter": False
         },
-        zoom=6.5,
+        zoom=zoom_level,
         center={"lat": 13.7367, "lon": 100.5231},
         mapbox_style="carto-positron",
         height=1000
