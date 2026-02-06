@@ -195,5 +195,60 @@ with col_info:
         st.info("Click on a district bubble on the map to see the Top 3 party breakdown.")
         # Optional: Show national top 3 if nothing is selected
         st.caption("Current View: National Summary")
-        total_votes = province_df[party_cols].sum().sort_values(ascending=False).head(5)
-        st.bar_chart(total_votes)
+        # Sum all columns (parties), sort, and take the top 5
+        total_votes_series = province_df[party_cols].sum().sort_values(ascending=False).head(5)
+
+        # Convert to a DataFrame for Plotly
+        total_votes_df = pd.DataFrame({
+            'Party': total_votes_series.index,
+            'Votes': total_votes_series.values
+        })
+
+        # 2. Create Horizontal Bar Chart
+        fig_total = px.bar(
+            total_votes_df,
+            x='Votes',
+            y='Party',
+            orientation='h',
+            color='Party',
+            color_discrete_map=thai_colors,  # Uses your global color map
+            text_auto=',.0f',                # Adds formatted vote counts on the bars
+            title="National Top 5 Constituency Votes"
+        )
+
+        # 3. Refine Layout
+        fig_total.update_layout(
+            showlegend=False,
+            yaxis={'categoryorder': 'total ascending'}, # Puts the highest vote at the top
+            xaxis_title="Total Votes",
+            yaxis_title="",
+            margin=dict(l=20, r=20, t=40, b=20),
+            height=400
+        )
+
+        st.plotly_chart(fig_total, use_container_width=True)
+
+        constituency_winners = province_df['District_Winner'].value_counts()
+        # st.write(constituency_winners)
+
+        fig_bar = px.bar(
+            constituency_winners, 
+            x="count", 
+            y=constituency_winners.index,
+            orientation='h',
+            color=constituency_winners.index,
+            color_discrete_map=thai_colors,
+            text_auto=True, # Automatically adds the count number on the bar
+            labels={'count': 'Number of Seats', 'index': 'Party'},
+            title="Constituency Seats Won by Party"
+        )
+
+        # Sorting: This ensures the largest party is at the top
+        fig_bar.update_layout(
+            yaxis={'categoryorder': 'total ascending'},
+            yaxis_title="",
+            showlegend=False, # Party names are already on the Y-axis
+            margin=dict(l=20, r=20, t=30, b=20)
+        )
+
+        st.plotly_chart(fig_bar, width='stretch')

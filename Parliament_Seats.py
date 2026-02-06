@@ -126,7 +126,8 @@ st.divider()
 st.subheader("📊 Seat Distribution Summary")
 # Create a copy to add percentage columns without affecting the original summary used for the Arc
 summary_display = summary.copy()
-
+# st.write(summary_display)
+# st.write("Check above")
 # Calculate percentages based on the fixed total house sizes
 summary_display["Constituency %"] = (summary_display["Constituency Seats"] / 400 * 100).map("{:.1f}%".format)
 summary_display["Total %"] = (summary_display["Total"] / 500 * 100).map("{:.1f}%".format)
@@ -153,7 +154,7 @@ for i in range(0, len(parties), cols_per_row):
             
             st.markdown(f"""
                 <div style="border-left: 5px solid {color}; padding: 10px; background-color: #f9f9f9; border-radius: 5px; margin-bottom: 10px;">
-                    <h4 style="margin: 0; color: #333;">{party}</h4>
+                    <h5 style="margin: 0; color: #333;">{party}</h4>
                     <p style="margin: 5px 0 2px 0; font-size: 1.3em; color: #666;">
                         Total: <b>{total_seats}</b> <span style="font-size: 0.7em;">({total_pct:.1f}%)</span>
                     </p>
@@ -189,16 +190,13 @@ st.table(summary_final)
 st.divider()
 st.subheader("🗳️ Constituency Voting Details")
 with st.expander("See detailed vote counts and seat allocations for each party"):
-    detailed_table = pl_calc.copy()
-    detailed_table["Constituency Seats"] = detailed_table.index.map(constituency_winners).fillna(0).astype(int)
-    detailed_table = detailed_table[["Total Votes", "Constituency Seats"]]
-    detailed_table.columns = ["Total Votes", "Constituency Seats"]
-    st.dataframe(
-        detailed_table.style.format({
-            "Total Votes": "{:,.0f}"
-        }), 
-        width="stretch"
-    )
+    
+    total_constituency_vote = province_df[party_cols].sum()
+    
+    #### add constituency seats wins to total_constituency_vote
+    total_constituency_vote = total_constituency_vote.to_frame(name="Total Votes")
+    total_constituency_vote["Constituency Seats"] = total_constituency_vote.index.map(constituency_winners).fillna(0).astype(int)
+    st.dataframe(total_constituency_vote, width="stretch")
     st.dataframe(province_df)
 # --- NEW SECTION: PARTY LIST CALCULATION TABLE ---
 st.divider()
