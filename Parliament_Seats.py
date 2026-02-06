@@ -5,6 +5,7 @@ import plotly.express as px
 
 st.set_page_config(page_title="Thailand Election 2026", layout="wide")
 
+run_live = st.checkbox("Run Live Update", value=False)
 # 1. Load Data
 # @st.cache_data
 def load_election_data():
@@ -13,8 +14,11 @@ def load_election_data():
     partylist_gid = "374730466"
 
     def process_sheet(gid):
-        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-        df = pd.read_csv(url, header=1)
+        if run_live:
+            url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+            df = pd.read_csv(url, header=1)
+        else:
+            df = pd.read_excel(f"Th election Province list.xlsx", header=1, sheet_name=gid)
         non_party_cols = ['Province', 'Region', 'Constituency_ID', 'Province (English)', 'District']
         party_cols = [c for c in df.columns if c not in non_party_cols and "Unnamed" not in c]
         for col in party_cols:
@@ -27,8 +31,8 @@ def load_election_data():
         df['Winning_Votes'] = row_max
         return df, party_cols
 
-    province_df, _ = process_sheet(province_gid)
-    partylist_df, party_cols = process_sheet(partylist_gid)
+    province_df, _ = process_sheet(province_gid if run_live else "Province")
+    partylist_df, party_cols = process_sheet(partylist_gid if run_live else "Party List")
     return province_df, partylist_df, party_cols
 
 province_df, partylist_df, party_cols = load_election_data()

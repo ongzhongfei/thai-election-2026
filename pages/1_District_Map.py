@@ -9,6 +9,7 @@ st.set_page_config(page_title="400 Constituency Seats Map", layout="wide")
 st.title("🇹🇭 400 Constituency Seat Winners")
 st.subheader("Each bubble represents one district, colored by winning party.")
 
+run_live = st.checkbox("Run Live Update", value=False)
 # 1. Load Data
 def load_election_data():
     sheet_id = "1fm_6pbiXU6jBwHtu13Yuqh_XgQY-AW03"
@@ -17,8 +18,12 @@ def load_election_data():
     coordinates_gid = "2069825376"
 
     def process_sheet(gid, header=1):
-        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-        df = pd.read_csv(url, header=header)
+        df = pd.DataFrame()
+        if run_live:
+            url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+            df = pd.read_csv(url, header=header)
+        else:
+            df = pd.read_excel(f"Th election Province list.xlsx", header=header, sheet_name=gid)
         non_party_cols = ['Province', 'Region', 'Constituency_ID', 'Province (English)', 'District', "Coordinates"]
         party_cols = [c for c in df.columns if c not in non_party_cols and "Unnamed" not in c]
         for col in party_cols:
@@ -31,9 +36,9 @@ def load_election_data():
         df['Winning_Votes'] = row_max
         return df, party_cols
 
-    province_df, _ = process_sheet(province_gid)
-    partylist_df, party_cols = process_sheet(partylist_gid)
-    province_coordinates_df, _ = process_sheet(coordinates_gid, header=0)
+    province_df, _ = process_sheet(province_gid if run_live else "Province")
+    partylist_df, party_cols = process_sheet(partylist_gid if run_live else "Party List")
+    province_coordinates_df, _ = process_sheet(coordinates_gid if run_live else "Coordinates", header=0)
     return province_df, partylist_df, party_cols, province_coordinates_df
 
 province_df, partylist_df, party_cols, province_coordinates_df = load_election_data()
